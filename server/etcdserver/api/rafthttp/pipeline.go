@@ -95,7 +95,7 @@ func (p *pipeline) handle() {
 
 	for {
 		select {
-		case m := <-p.msgc:
+		case m := <-p.msgc: // msgs to send next...
 			start := time.Now()
 			err := p.post(pbutil.MustMarshal(&m))
 			end := time.Now()

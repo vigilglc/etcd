@@ -48,7 +48,7 @@ func newFilePipeline(lg *zap.Logger, dir string, fileSize int64) *filePipeline {
 		lg:    lg,
 		dir:   dir,
 		size:  fileSize,
-		filec: make(chan *fileutil.LockedFile),
+		filec: make(chan *fileutil.LockedFile), // no cache channel, blocking until val received...
 		errc:  make(chan error, 1),
 		donec: make(chan struct{}),
 	}

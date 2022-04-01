@@ -62,8 +62,8 @@ type Transporter interface {
 	// A remote helps newly joined member to catch up the progress of cluster,
 	// and will not be used after that.
 	// It is the caller's responsibility to ensure the urls are all valid,
-	// or it panics.
-	AddRemote(id types.ID, urls []string)
+	// or it panics. see: https://github.com/etcd-io/etcd/pull/2701
+	AddRemote(id types.ID, urls []string) // ??? when new node gets bootstrapped and waits joining in the cluster, its remotes are all nodes already in the cluster...
 	// AddPeer adds a peer with given peer urls into the transport.
 	// It is the caller's responsibility to ensure the urls are all valid,
 	// or it panics.
@@ -182,10 +182,11 @@ func (t *Transport) Send(msgs []raftpb.Message) {
 
 		t.mu.RLock()
 		p, pok := t.peers[to]
-		g, rok := t.remotes[to]
+		g, rok := t.remotes[to] // 当前节点可能未加入集群或是落后节点，则把自己收到的所有消息也要转发给自己的 remote 节点
+		// if p exists, g does nothing... I know everything!!!
 		t.mu.RUnlock()
 
-		if pok {
+		if pok { // peer is prior to remote...
 			if m.Type == raftpb.MsgApp {
 				t.ServerStats.SendAppendReq(m.Size())
 			}
@@ -193,7 +194,7 @@ func (t *Transport) Send(msgs []raftpb.Message) {
 			continue
 		}
 
-		if rok {
+		if rok { // this branch will be skipped if current node is already in the cluster...
 			g.send(m)
 			continue
 		}

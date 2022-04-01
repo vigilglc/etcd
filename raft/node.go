@@ -38,8 +38,8 @@ var (
 // SoftState provides state that is useful for logging and debugging.
 // The state is volatile and does not need to be persisted to the WAL.
 type SoftState struct {
-	Lead      uint64 // must use atomic operations to access; keep 64-bit aligned.
-	RaftState StateType
+	Lead      uint64    // must use atomic operations to access; keep 64-bit aligned.
+	RaftState StateType // Leader, PreCandidate, Candidate, Follower...
 }
 
 func (a *SoftState) equal(b *SoftState) bool {
@@ -79,7 +79,7 @@ type Ready struct {
 	CommittedEntries []pb.Entry
 
 	// Messages specifies outbound messages to be sent AFTER Entries are
-	// committed to stable storage.
+	// committed to stable storage. // committed? meaning here...
 	// If it contains a MsgSnap message, the application MUST report back to raft
 	// when the snapshot has been received or has failed by calling ReportSnapshot.
 	Messages []pb.Message
@@ -112,7 +112,7 @@ func (rd Ready) containsUpdates() bool {
 // appliedCursor extracts from the Ready the highest index the client has
 // applied (once the Ready is confirmed via Advance). If no information is
 // contained in the Ready, returns zero.
-func (rd Ready) appliedCursor() uint64 {
+func (rd Ready) appliedCursor() uint64 { // after ready.Advance()...
 	if n := len(rd.CommittedEntries); n > 0 {
 		return rd.CommittedEntries[n-1].Index
 	}
@@ -185,7 +185,7 @@ type Node interface {
 	// processed safely. The read state will have the same rctx attached.
 	// Note that request can be lost without notice, therefore it is user's job
 	// to ensure read index retries.
-	ReadIndex(ctx context.Context, rctx []byte) error
+	ReadIndex(ctx context.Context, rctx []byte) error // user's job... retry
 
 	// Status returns the current status of the raft state machine.
 	Status() Status
@@ -197,7 +197,7 @@ type Node interface {
 	// snapshot (for e.g., while streaming it from leader to follower), should be reported to the
 	// leader with SnapshotFailure. When leader sends a snapshot to a follower, it pauses any raft
 	// log probes until the follower can apply the snapshot and advance its state. If the follower
-	// can't do that, for e.g., due to a crash, it could end up in a limbo, never getting any
+	// can't do that, for e.g., due to a crash, it could end up in a limbo, never getting any // limbo, an uncertain period of awaiting a decision or resolution; an intermediate state or condition.
 	// updates from the leader. Therefore, it is crucial that the application ensures that any
 	// failure in snapshot sending is caught and reported back to the leader; so it can resume raft
 	// log probing in the follower.
@@ -264,7 +264,7 @@ type node struct {
 	tickc      chan struct{}
 	done       chan struct{}
 	stop       chan struct{}
-	status     chan chan Status
+	status     chan chan Status // channel's channel
 
 	rn *RawNode
 }
@@ -292,8 +292,8 @@ func (n *node) Stop() {
 	select {
 	case n.stop <- struct{}{}:
 		// Not already stopped, so trigger it
-	case <-n.done:
-		// Node has already been stopped - no need to do anything
+	case <-n.done: // in run loop, when close received, close n.done...
+		// Node has already been stopped - no need to do anything // 可重入
 		return
 	}
 	// Block until the stop has been acknowledged by run()
@@ -391,7 +391,7 @@ func (n *node) run() {
 			}
 		case <-n.tickc:
 			n.rn.Tick()
-		case readyc <- rd:
+		case readyc <- rd: // will panic? ans: read or write to a nil channel will block, i.e. this branch is ignored in select...
 			n.rn.acceptReady(rd)
 			advancec = n.advancec
 		case <-advancec:
@@ -449,7 +449,7 @@ func (n *node) ProposeConfChange(ctx context.Context, cc pb.ConfChangeI) error {
 	return n.Step(ctx, msg)
 }
 
-func (n *node) step(ctx context.Context, m pb.Message) error {
+func (n *node) step(ctx context.Context, m pb.Message) error { // no need to wait until msgs appended to state machine...
 	return n.stepWithWaitOption(ctx, m, false)
 }
 
@@ -472,11 +472,11 @@ func (n *node) stepWithWaitOption(ctx context.Context, m pb.Message, wait bool) 
 	}
 	ch := n.propc
 	pm := msgWithResult{m: m}
-	if wait {
+	if wait { // in run loop, pm.result will be closed after all msgs are appended in state machine...
 		pm.result = make(chan error, 1)
 	}
 	select {
-	case ch <- pm:
+	case ch <- pm: // pc, n.propc
 		if !wait {
 			return nil
 		}
@@ -563,7 +563,8 @@ func newReady(r *raft, prevSoftSt *SoftState, prevHardSt pb.HardState) Ready {
 	rd := Ready{
 		Entries:          r.raftLog.unstableEntries(),
 		CommittedEntries: r.raftLog.nextEnts(),
-		Messages:         r.msgs,
+		Messages:         r.msgs, // after raft.Advance, r.msgs are set to nil;
+		// when raft received MsgAppResp Reject, append new Msgs and new Entries...
 	}
 	if softSt := r.softState(); !softSt.equal(prevSoftSt) {
 		rd.SoftState = softSt

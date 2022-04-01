@@ -583,7 +583,7 @@ func (s *EtcdServer) purgeFile() {
 	lg := s.Logger()
 	var dberrc, serrc, werrc <-chan error
 	var dbdonec, sdonec, wdonec <-chan struct{}
-	if s.Cfg.MaxSnapFiles > 0 {
+	if s.Cfg.MaxSnapFiles > 0 { // here to release snap file....
 		dbdonec, dberrc = fileutil.PurgeFileWithDoneNotify(lg, s.Cfg.SnapDir(), "snap.db", s.Cfg.MaxSnapFiles, purgeFileInterval, s.stopping)
 		sdonec, serrc = fileutil.PurgeFileWithDoneNotify(lg, s.Cfg.SnapDir(), "snap", s.Cfg.MaxSnapFiles, purgeFileInterval, s.stopping)
 	}
@@ -897,7 +897,7 @@ func (s *EtcdServer) Cleanup() {
 }
 
 func (s *EtcdServer) applyAll(ep *etcdProgress, apply *apply) {
-	s.applySnapshot(ep, apply)
+	s.applySnapshot(ep, apply) // <-apply.notify 1.
 	s.applyEntries(ep, apply)
 
 	proposalsApplied.Set(float64(ep.appliedi))
@@ -906,7 +906,7 @@ func (s *EtcdServer) applyAll(ep *etcdProgress, apply *apply) {
 	// wait for the raft routine to finish the disk writes before triggering a
 	// snapshot. or applied index might be greater than the last index in raft
 	// storage, since the raft routine might be slower than apply routine.
-	<-apply.notifyc
+	<-apply.notifyc // <-apply.notify 2.
 
 	s.triggerSnapshot(ep)
 	select {
@@ -1883,7 +1883,8 @@ func (s *EtcdServer) applyEntryNormal(e *raftpb.Entry) {
 	// raft state machine may generate noop entry when leader confirmation.
 	// skip it in advance to avoid some potential bug in the future
 	if len(e.Data) == 0 {
-		s.firstCommitInTerm.Notify()
+		s.firstCommitInTerm.Notify() // especially for read index... only after first entry in this term committed,
+		// consistency gets guaranteed...
 
 		// promote lessor when the local member is leader and finished
 		// applying all entries from the last term.

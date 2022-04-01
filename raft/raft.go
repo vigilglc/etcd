@@ -285,7 +285,7 @@ type raft struct {
 	// number of ticks since it reached last electionTimeout when it is leader
 	// or candidate.
 	// number of ticks since it reached last electionTimeout or received a
-	// valid message from current leader when it is a follower.
+	// valid message from current leader when it is a follower
 	electionElapsed int
 
 	// number of ticks since it reached last heartbeatTimeout.
@@ -342,7 +342,7 @@ func newRaft(c *Config) *raft {
 		disableProposalForwarding: c.DisableProposalForwarding,
 	}
 
-	cfg, prs, err := confchange.Restore(confchange.Changer{
+	cfg, prs, err := confchange.Restore(confchange.Changer{ // restore config from confState, confState fetched from Storage...
 		Tracker:   r.prs,
 		LastIndex: raftlog.lastIndex(),
 	}, cs)
@@ -383,7 +383,7 @@ func (r *raft) hardState() pb.HardState {
 
 // send schedules persisting state to a stable storage and AFTER that
 // sending the message (as part of next Ready message processing).
-func (r *raft) send(m pb.Message) {
+func (r *raft) send(m pb.Message) { // even in election stage, multiple messages to different nodes are appended here...
 	if m.From == None {
 		m.From = r.id
 	}
@@ -411,7 +411,7 @@ func (r *raft) send(m pb.Message) {
 		// proposals are a way to forward to the leader and
 		// should be treated as local message.
 		// MsgReadIndex is also forwarded to leader.
-		if m.Type != pb.MsgProp && m.Type != pb.MsgReadIndex {
+		if m.Type != pb.MsgProp && m.Type != pb.MsgReadIndex { // term assigned here...
 			m.Term = r.Term
 		}
 	}
@@ -492,7 +492,7 @@ func (r *raft) maybeSendAppend(to uint64, sendIfEmpty bool) bool {
 }
 
 // sendHeartbeat sends a heartbeat RPC to the given peer.
-func (r *raft) sendHeartbeat(to uint64, ctx []byte) {
+func (r *raft) sendHeartbeat(to uint64, ctx []byte) { // differentiate AppendEntries from HeartBeat
 	// Attach the commit as min(to.matched, r.committed).
 	// When the leader sends out heartbeat message,
 	// the receiver(follower) might not be matched with the leader
@@ -504,7 +504,7 @@ func (r *raft) sendHeartbeat(to uint64, ctx []byte) {
 		To:      to,
 		Type:    pb.MsgHeartbeat,
 		Commit:  commit,
-		Context: ctx,
+		Context: ctx, // meaning? when read only, it is used to fetch readOnlyStatus...
 	}
 
 	r.send(m)
@@ -512,7 +512,7 @@ func (r *raft) sendHeartbeat(to uint64, ctx []byte) {
 
 // bcastAppend sends RPC, with entries to all peers that are not up-to-date
 // according to the progress recorded in r.prs.
-func (r *raft) bcastAppend() {
+func (r *raft) bcastAppend() { // broadcast.... is this abbr necessary?
 	r.prs.Visit(func(id uint64, _ *tracker.Progress) {
 		if id == r.id {
 			return
@@ -523,7 +523,7 @@ func (r *raft) bcastAppend() {
 
 // bcastHeartbeat sends RPC, without entries to all the peers.
 func (r *raft) bcastHeartbeat() {
-	lastCtx := r.readOnly.lastPendingRequestCtx()
+	lastCtx := r.readOnly.lastPendingRequestCtx() // ?
 	if len(lastCtx) == 0 {
 		r.bcastHeartbeatWithCtx(nil)
 	} else {
@@ -547,7 +547,7 @@ func (r *raft) advance(rd Ready) {
 	// the next Ready. Note that if the current HardState contains a
 	// new Commit index, this does not mean that we're also applying
 	// all of the new entries due to commit pagination by size.
-	if newApplied := rd.appliedCursor(); newApplied > 0 {
+	if newApplied := rd.appliedCursor(); newApplied > 0 { // applied index read from CommittedEntries...
 		oldApplied := r.raftLog.applied
 		r.raftLog.appliedTo(newApplied)
 
@@ -571,7 +571,7 @@ func (r *raft) advance(rd Ready) {
 	}
 
 	if len(rd.Entries) > 0 {
-		e := rd.Entries[len(rd.Entries)-1]
+		e := rd.Entries[len(rd.Entries)-1] // updated according to last ready's Entries...
 		r.raftLog.stableTo(e.Index, e.Term)
 	}
 	if !IsEmptySnap(rd.Snapshot) {
@@ -618,7 +618,7 @@ func (r *raft) reset(term uint64) {
 	r.readOnly = newReadOnly(r.readOnly.option)
 }
 
-func (r *raft) appendEntry(es ...pb.Entry) (accepted bool) {
+func (r *raft) appendEntry(es ...pb.Entry) (accepted bool) { // append entries locally as a leader...
 	li := r.raftLog.lastIndex()
 	for i := range es {
 		es[i].Term = r.Term
@@ -651,7 +651,7 @@ func (r *raft) tickElection() {
 			r.logger.Debugf("error occurred during election: %v", err)
 		}
 	}
-}
+} // candidate and follower behaviour
 
 // tickHeartbeat is run by leaders to send a MsgBeat after r.heartbeatTimeout.
 func (r *raft) tickHeartbeat() {
@@ -660,7 +660,7 @@ func (r *raft) tickHeartbeat() {
 
 	if r.electionElapsed >= r.electionTimeout {
 		r.electionElapsed = 0
-		if r.checkQuorum {
+		if r.checkQuorum { // 检查集群中节点是否活跃，如果不活跃，则自身切换为 follower 状态
 			if err := r.Step(pb.Message{From: r.id, Type: pb.MsgCheckQuorum}); err != nil {
 				r.logger.Debugf("error occurred during checking sending heartbeat: %v", err)
 			}
@@ -681,7 +681,7 @@ func (r *raft) tickHeartbeat() {
 			r.logger.Debugf("error occurred during checking sending heartbeat: %v", err)
 		}
 	}
-}
+} // leader behaviour
 
 func (r *raft) becomeFollower(term uint64, lead uint64) {
 	r.step = stepFollower
@@ -744,7 +744,7 @@ func (r *raft) becomeLeader() {
 	// could be expensive.
 	r.pendingConfIndex = r.raftLog.lastIndex()
 
-	emptyEnt := pb.Entry{Data: nil}
+	emptyEnt := pb.Entry{Data: nil} // no op log entry... force sync
 	if !r.appendEntry(emptyEnt) {
 		// This won't happen because we just called reset() above.
 		r.logger.Panic("empty entry was dropped")
@@ -757,7 +757,7 @@ func (r *raft) becomeLeader() {
 	r.logger.Infof("%x became leader at term %d", r.id, r.Term)
 }
 
-func (r *raft) hup(t CampaignType) {
+func (r *raft) hup(t CampaignType) { // preElection, election and leaderTransfer
 	if r.state == StateLeader {
 		r.logger.Debugf("%x ignoring MsgHup because already leader", r.id)
 		return
@@ -772,6 +772,7 @@ func (r *raft) hup(t CampaignType) {
 		r.logger.Panicf("unexpected error getting unapplied entries (%v)", err)
 	}
 	if n := numOfPendingConf(ents); n != 0 && r.raftLog.committed > r.raftLog.applied {
+		// check if there are conf change entries in ents...
 		r.logger.Warningf("%x cannot campaign at term %d since there are still %d pending configuration changes to apply", r.id, r.Term, n)
 		return
 	}
@@ -783,7 +784,7 @@ func (r *raft) hup(t CampaignType) {
 // campaign transitions the raft instance to candidate state. This must only be
 // called after verifying that this is a legitimate transition.
 func (r *raft) campaign(t CampaignType) {
-	if !r.promotable() {
+	if !r.promotable() { // check if there is pending snapshot.
 		// This path should not be hit (callers are supposed to check), but
 		// better safe than sorry.
 		r.logger.Warningf("%x is unpromotable; campaign() should have been called", r.id)
@@ -834,14 +835,15 @@ func (r *raft) campaign(t CampaignType) {
 	}
 }
 
+// 投票并查看投票后的最新结果
 func (r *raft) poll(id uint64, t pb.MessageType, v bool) (granted int, rejected int, result quorum.VoteResult) {
-	if v {
+	if v { // v, to vote or not
 		r.logger.Infof("%x received %s from %x at term %d", r.id, t, id, r.Term)
 	} else {
 		r.logger.Infof("%x received %s rejection from %x at term %d", r.id, t, id, r.Term)
 	}
 	r.prs.RecordVote(id, v)
-	return r.prs.TallyVotes()
+	return r.prs.TallyVotes() // tally, 计数、合计
 }
 
 func (r *raft) Step(m pb.Message) error {
@@ -849,7 +851,7 @@ func (r *raft) Step(m pb.Message) error {
 	switch {
 	case m.Term == 0:
 		// local message
-	case m.Term > r.Term:
+	case m.Term > r.Term: // for candidate or followers
 		if m.Type == pb.MsgVote || m.Type == pb.MsgPreVote {
 			force := bytes.Equal(m.Context, []byte(campaignTransfer))
 			inLease := r.checkQuorum && r.lead != None && r.electionElapsed < r.electionTimeout
@@ -931,11 +933,11 @@ func (r *raft) Step(m pb.Message) error {
 		// We can vote if this is a repeat of a vote we've already cast...
 		canVote := r.Vote == m.From ||
 			// ...we haven't voted and we don't think there's a leader yet in this term...
-			(r.Vote == None && r.lead == None) ||
+			(r.Vote == None && r.lead == None) || // cannot vote for a node in the same term...
 			// ...or this is a PreVote for a future term...
 			(m.Type == pb.MsgPreVote && m.Term > r.Term)
 		// ...and we believe the candidate is up to date.
-		if canVote && r.raftLog.isUpToDate(m.Index, m.LogTerm) {
+		if canVote && r.raftLog.isUpToDate(m.Index, m.LogTerm) { // check whether leader's log is up-to-date?
 			// Note: it turns out that that learners must be allowed to cast votes.
 			// This seems counter- intuitive but is necessary in the situation in which
 			// a learner has been promoted (i.e. is now a voter) but has not learned
@@ -1073,7 +1075,7 @@ func stepLeader(r *raft, m pb.Message) error {
 		if !r.appendEntry(m.Entries...) {
 			return ErrProposalDropped
 		}
-		r.bcastAppend()
+		r.bcastAppend() // make MsgApp for each node...
 		return nil
 	case pb.MsgReadIndex:
 		// only one voting member (the leader) in the cluster
@@ -1086,7 +1088,7 @@ func stepLeader(r *raft, m pb.Message) error {
 
 		// Postpone read only request when this leader has not committed
 		// any log entry at its term.
-		if !r.committedEntryInCurrentTerm() {
+		if !r.committedEntryInCurrentTerm() { // notice!!!
 			r.pendingReadIndexMessages = append(r.pendingReadIndexMessages, m)
 			return nil
 		}
@@ -1259,12 +1261,13 @@ func stepLeader(r *raft, m pb.Message) error {
 				if r.maybeCommit() {
 					// committed index has progressed for the term, so it is safe
 					// to respond to pending read index requests
-					releasePendingReadIndexMessages(r)
+					releasePendingReadIndexMessages(r) // when MsgReadIndex received, but raft has not commit a log in this term,
+					// any readIndexMsg gets saved... above line releases these msgs...
 					r.bcastAppend()
 				} else if oldPaused {
 					// If we were paused before, this node may be missing the
 					// latest commit index, so send it.
-					r.sendAppend(m.From)
+					r.sendAppend(m.From) // maybeSendAppend(m.From, true) // true for empty msg, i.e. commit index msg
 				}
 				// We've updated flow control information above, which may
 				// allow us to send multiple (size-limited) in-flight messages
@@ -1272,7 +1275,7 @@ func stepLeader(r *raft, m pb.Message) error {
 				// replicate, or when freeTo() covers multiple messages). If
 				// we have more entries to send, send as many messages as we
 				// can (without sending empty messages for the commit index)
-				for r.maybeSendAppend(m.From, false) {
+				for r.maybeSendAppend(m.From, false) { // r.maxMsgSize limits msg size...
 				}
 				// Transfer leadership is in progress.
 				if m.From == r.leadTransferee && pr.Match == r.raftLog.lastIndex() {
@@ -1301,8 +1304,8 @@ func stepLeader(r *raft, m pb.Message) error {
 			return nil
 		}
 
-		rss := r.readOnly.advance(m)
-		for _, rs := range rss {
+		rss := r.readOnly.advance(m) // readIndex msq formally processed... this is a batch operation
+		for _, rs := range rss {     // send resp to whom?
 			if resp := r.responseToReadIndexReq(rs.req, rs.index); resp.To != None {
 				r.send(resp)
 			}
@@ -1388,7 +1391,7 @@ func stepCandidate(r *raft, m pb.Message) error {
 		r.logger.Infof("%x no leader at term %d; dropping proposal", r.id, r.Term)
 		return ErrProposalDropped
 	case pb.MsgApp:
-		r.becomeFollower(m.Term, m.From) // always m.Term == r.Term
+		r.becomeFollower(m.Term, m.From) // always m.Term == r.Term, since  in Step function, step func ptr is the default branch...
 		r.handleAppendEntries(m)
 	case pb.MsgHeartbeat:
 		r.becomeFollower(m.Term, m.From) // always m.Term == r.Term
@@ -1513,7 +1516,7 @@ func (r *raft) handleAppendEntries(m pb.Message) {
 func (r *raft) handleHeartbeat(m pb.Message) {
 	r.raftLog.commitTo(m.Commit)
 	r.send(pb.Message{To: m.From, Type: pb.MsgHeartbeatResp, Context: m.Context})
-}
+} // heart beat resp updates commit index...
 
 func (r *raft) handleSnapshot(m pb.Message) {
 	sindex, sterm := m.Snapshot.Metadata.Index, m.Snapshot.Metadata.Term
@@ -1581,14 +1584,14 @@ func (r *raft) restore(s pb.Snapshot) bool {
 
 	// Now go ahead and actually restore.
 
-	if r.raftLog.matchTerm(s.Metadata.Index, s.Metadata.Term) {
+	if r.raftLog.matchTerm(s.Metadata.Index, s.Metadata.Term) { // no snapshot in raftLog.unstable...
 		r.logger.Infof("%x [commit: %d, lastindex: %d, lastterm: %d] fast-forwarded commit to snapshot [index: %d, term: %d]",
 			r.id, r.raftLog.committed, r.raftLog.lastIndex(), r.raftLog.lastTerm(), s.Metadata.Index, s.Metadata.Term)
 		r.raftLog.commitTo(s.Metadata.Index)
 		return false
 	}
 
-	r.raftLog.restore(s)
+	r.raftLog.restore(s) // when snapshot not consistent with log....
 
 	// Reset the configuration and add the (potentially updated) peers in anew.
 	r.prs = tracker.MakeProgressTracker(r.prs.MaxInflight)
@@ -1833,7 +1836,7 @@ func sendMsgReadIndexResponse(r *raft, m pb.Message) {
 	case ReadOnlySafe:
 		r.readOnly.addRequest(r.raftLog.committed, m)
 		// The local node automatically acks the request.
-		r.readOnly.recvAck(r.id, m.Entries[0].Data)
+		r.readOnly.recvAck(r.id, m.Entries[0].Data) // Data here is rctx passed from node.ReadIndex, self vote for readonly...
 		r.bcastHeartbeatWithCtx(m.Entries[0].Data)
 	case ReadOnlyLeaseBased:
 		if resp := r.responseToReadIndexReq(m, r.raftLog.committed); resp.To != None {

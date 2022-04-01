@@ -52,7 +52,8 @@ type RaftCluster struct {
 
 	sync.Mutex // guards the fields below
 	version    *semver.Version
-	members    map[types.ID]*Member
+	members    map[types.ID]*Member // there fields are volatile, true values are stored in backend.
+	// Here mostly for transport usages...
 	// removed contains the ids of removed members in the cluster.
 	// removed id cannot be reused.
 	removed map[types.ID]bool

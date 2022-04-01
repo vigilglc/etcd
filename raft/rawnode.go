@@ -67,7 +67,7 @@ func (rn *RawNode) Tick() {
 //
 // WARNING: Be very careful about using this method as it subverts the Raft
 // state machine. You should probably be using Tick instead.
-func (rn *RawNode) TickQuiesced() {
+func (rn *RawNode) TickQuiesced() { // 静默
 	rn.raft.electionElapsed++
 }
 

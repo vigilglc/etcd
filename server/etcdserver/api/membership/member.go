@@ -30,7 +30,7 @@ import (
 type RaftAttributes struct {
 	// PeerURLs is the list of peers in the raft cluster.
 	// TODO(philips): ensure these are URLs
-	PeerURLs []string `json:"peerURLs"`
+	PeerURLs []string `json:"peerURLs"` // for raft server to communicate
 	// IsLearner indicates if the member is raft learner.
 	IsLearner bool `json:"isLearner,omitempty"`
 }
@@ -38,7 +38,7 @@ type RaftAttributes struct {
 // Attributes represents all the non-raft related attributes of an etcd member.
 type Attributes struct {
 	Name       string   `json:"name,omitempty"`
-	ClientURLs []string `json:"clientURLs,omitempty"`
+	ClientURLs []string `json:"clientURLs,omitempty"` // for user call client api to communicate...
 }
 
 type Member struct {

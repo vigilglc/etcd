@@ -156,7 +156,7 @@ func (p *ProgressTracker) ConfState() pb.ConfState {
 // IsSingleton returns true if (and only if) there is only one voting member
 // (i.e. the leader) in the current configuration.
 func (p *ProgressTracker) IsSingleton() bool {
-	return len(p.Voters[0]) == 1 && len(p.Voters[1]) == 0
+	return len(p.Voters[0]) == 1 && len(p.Voters[1]) == 0 // the first majority config has only one member, leader itself
 }
 
 type matchAckIndexer map[uint64]*Progress

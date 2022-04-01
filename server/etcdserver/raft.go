@@ -165,7 +165,7 @@ func (r *raftNode) start(rh *raftReadyHandler) {
 		for {
 			select {
 			case <-r.ticker.C:
-				r.tick()
+				r.tick() // lock necessary in an individual goroutine...
 			case rd := <-r.Ready():
 				if rd.SoftState != nil {
 					newLeader := rd.SoftState.Lead != raft.None && rh.getLead() != rd.SoftState.Lead
@@ -174,7 +174,7 @@ func (r *raftNode) start(rh *raftReadyHandler) {
 					}
 
 					if rd.SoftState.Lead == raft.None {
-						hasLeader.Set(0)
+						hasLeader.Set(0) // metrics 服务监控使用
 					} else {
 						hasLeader.Set(1)
 					}
@@ -190,9 +190,9 @@ func (r *raftNode) start(rh *raftReadyHandler) {
 					r.td.Reset()
 				}
 
-				if len(rd.ReadStates) != 0 {
+				if len(rd.ReadStates) != 0 { // when this is a follower node, this field can be set, after reading out leader's ReadIndexResp
 					select {
-					case r.readStateC <- rd.ReadStates[len(rd.ReadStates)-1]:
+					case r.readStateC <- rd.ReadStates[len(rd.ReadStates)-1]: // retry will send multiple copies, the last one is the newest...
 					case <-time.After(internalTimeout):
 						r.lg.Warn("timed out sending read state", zap.Duration("timeout", internalTimeout))
 					case <-r.stopped:
@@ -207,7 +207,8 @@ func (r *raftNode) start(rh *raftReadyHandler) {
 					notifyc:  notifyc,
 				}
 
-				updateCommittedIndex(&ap, rh)
+				updateCommittedIndex(&ap, rh) // merely update index, according to entries and snapshot
+				// the index here is no equal to CommitIndex... since CommittedEntries have size limit... so why?
 
 				select {
 				case r.applyc <- ap:
@@ -225,7 +226,7 @@ func (r *raftNode) start(rh *raftReadyHandler) {
 
 				// Must save the snapshot file and WAL snapshot entry before saving any other entries or hardstate to
 				// ensure that recovery after a snapshot restore is possible.
-				if !raft.IsEmptySnap(rd.Snapshot) {
+				if !raft.IsEmptySnap(rd.Snapshot) { // snapshot is merely alternative to entries, changing no states...
 					// gofail: var raftBeforeSaveSnap struct{}
 					if err := r.storage.SaveSnap(rd.Snapshot); err != nil {
 						r.lg.Fatal("failed to save Raft snapshot", zap.Error(err))
@@ -234,14 +235,15 @@ func (r *raftNode) start(rh *raftReadyHandler) {
 				}
 
 				// gofail: var raftBeforeSave struct{}
-				if err := r.storage.Save(rd.HardState, rd.Entries); err != nil {
+				if err := r.storage.Save(rd.HardState, rd.Entries); err != nil { // whether to sync
+					// depends on hard state...
 					r.lg.Fatal("failed to save Raft hard state and entries", zap.Error(err))
 				}
 				if !raft.IsEmptyHardState(rd.HardState) {
 					proposalsCommitted.Set(float64(rd.HardState.Commit))
 				}
 				// gofail: var raftAfterSave struct{}
-
+				// first save data to stable storage wal, then save to memory storage as cache...
 				if !raft.IsEmptySnap(rd.Snapshot) {
 					// Force WAL to fsync its hard state before Release() releases
 					// old data from the WAL. Otherwise could get an error like:
@@ -293,7 +295,7 @@ func (r *raftNode) start(rh *raftReadyHandler) {
 						// to be in sync with scheduled config-change job
 						// (assume notifyc has cap of 1)
 						select {
-						case notifyc <- struct{}{}:
+						case notifyc <- struct{}{}: // after applyWait.Trigger, all conf-change entries applied...
 						case <-r.stopped:
 							return
 						}
@@ -334,7 +336,7 @@ func (r *raftNode) processMessages(ms []raftpb.Message) []raftpb.Message {
 			ms[i].To = 0
 		}
 
-		if ms[i].Type == raftpb.MsgAppResp {
+		if ms[i].Type == raftpb.MsgAppResp { // only the last AppResp necessary to sent, source code in http.Sent...
 			if sentAppResp {
 				ms[i].To = 0
 			} else {
@@ -342,7 +344,7 @@ func (r *raftNode) processMessages(ms []raftpb.Message) []raftpb.Message {
 			}
 		}
 
-		if ms[i].Type == raftpb.MsgSnap {
+		if ms[i].Type == raftpb.MsgSnap { // ?
 			// There are two separate data store: the store for v2, and the KV for v3.
 			// The msgSnap only contains the most recent snapshot of store without KV.
 			// So we need to redirect the msgSnap to etcd server main loop for merging in the
@@ -355,7 +357,7 @@ func (r *raftNode) processMessages(ms []raftpb.Message) []raftpb.Message {
 			ms[i].To = 0
 		}
 		if ms[i].Type == raftpb.MsgHeartbeat {
-			ok, exceed := r.td.Observe(ms[i].To)
+			ok, exceed := r.td.Observe(ms[i].To) // 监控 heartbeat 是否超市，进行 metrics 记录
 			if !ok {
 				// TODO: limit request rate.
 				r.lg.Warn(

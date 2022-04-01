@@ -67,7 +67,7 @@ func bootstrap(cfg config.ServerConfig) (b *bootstrappedServer, err error) {
 	if terr := fileutil.TouchDirAll(cfg.Logger, cfg.MemberDir()); terr != nil {
 		return nil, fmt.Errorf("cannot access member directory: %v", terr)
 	}
-	ss := bootstrapSnapshot(cfg)
+	ss := bootstrapSnapshot(cfg) // bootstrap snapshotter
 	prt, err := rafthttp.NewRoundTripper(cfg.PeerTLSInfo, cfg.PeerDialTimeout())
 	if err != nil {
 		return nil, err
@@ -75,7 +75,7 @@ func bootstrap(cfg config.ServerConfig) (b *bootstrappedServer, err error) {
 
 	haveWAL := wal.Exist(cfg.WALDir())
 	st := v2store.New(StoreClusterPrefix, StoreKeysPrefix)
-	backend, err := bootstrapBackend(cfg, haveWAL, st, ss)
+	backend, err := bootstrapBackend(cfg, haveWAL, st, ss) // bootstrap kvstore, consistentIndex and latest snapshot
 	if err != nil {
 		return nil, err
 	}
@@ -87,10 +87,10 @@ func bootstrap(cfg config.ServerConfig) (b *bootstrappedServer, err error) {
 		if err = fileutil.IsDirWriteable(cfg.WALDir()); err != nil {
 			return nil, fmt.Errorf("cannot write to WAL directory: %v", err)
 		}
-		bwal = bootstrapWALFromSnapshot(cfg, backend.snapshot)
+		bwal = bootstrapWALFromSnapshot(cfg, backend.snapshot) // wal, ents and snapshot...
 	}
 
-	cluster, err := bootstrapCluster(cfg, bwal, prt)
+	cluster, err := bootstrapCluster(cfg, bwal, prt) // 区分集群是否已存在，采用不同的 cluster 创建策略
 	if err != nil {
 		backend.Close()
 		return nil, err
@@ -102,7 +102,7 @@ func bootstrap(cfg config.ServerConfig) (b *bootstrappedServer, err error) {
 		return nil, err
 	}
 
-	err = cluster.Finalize(cfg, s)
+	err = cluster.Finalize(cfg, s) // here!!!, cluster with wal recovers members from here...
 	if err != nil {
 		backend.Close()
 		return nil, err
@@ -267,12 +267,12 @@ func maybeDefragBackend(cfg config.ServerConfig, be backend.Backend) error {
 
 func bootstrapCluster(cfg config.ServerConfig, bwal *bootstrappedWAL, prt http.RoundTripper) (c *bootstrapedCluster, err error) {
 	switch {
-	case bwal == nil && !cfg.NewCluster:
+	case bwal == nil && !cfg.NewCluster: // 集群已存在，需要和原集群的成员连接验证集群信息
 		c, err = bootstrapExistingClusterNoWAL(cfg, prt)
 	case bwal == nil && cfg.NewCluster:
-		c, err = bootstrapNewClusterNoWAL(cfg, prt)
+		c, err = bootstrapNewClusterNoWAL(cfg, prt) // 新集群建立，每个集群中的成员独立启动引导，只需要读取固定的初始配置
 	case bwal != nil && bwal.haveWAL:
-		c, err = bootstrapClusterWithWAL(cfg, bwal.meta)
+		c, err = bootstrapClusterWithWAL(cfg, bwal.meta) // see bootstrappedCluster.Finalize
 	default:
 		return nil, fmt.Errorf("unsupported bootstrap config")
 	}
@@ -309,7 +309,7 @@ func bootstrapExistingClusterNoWAL(cfg config.ServerConfig, prt http.RoundTrippe
 	member := cl.MemberByName(cfg.Name)
 	return &bootstrapedCluster{
 		remotes: remotes,
-		cl:      cl,
+		cl:      cl, // etcd first make confChange, then start this node. And that time, this node should communicate with other nodes...
 		nodeID:  member.ID,
 	}, nil
 }
@@ -447,7 +447,8 @@ func (c *bootstrapedCluster) Finalize(cfg config.ServerConfig, s *bootstrappedSt
 	c.cl.SetStore(s.st)
 	c.cl.SetBackend(schema.NewMembershipBackend(cfg.Logger, s.backend.be))
 	if s.wal.haveWAL {
-		c.cl.Recover(api.UpdateCapability)
+		c.cl.Recover(api.UpdateCapability) // necessary. say that, node's old friends all died ,
+		// and he knows nobody, waiting for first entry applied.
 		if c.databaseFileMissing(s) {
 			bepath := cfg.BackendPath()
 			os.RemoveAll(bepath)
@@ -465,7 +466,7 @@ func (c *bootstrapedCluster) databaseFileMissing(s *bootstrappedStorage) bool {
 
 func bootstrapRaft(cfg config.ServerConfig, cluster *bootstrapedCluster, bwal *bootstrappedWAL) *bootstrappedRaft {
 	switch {
-	case !bwal.haveWAL && !cfg.NewCluster:
+	case !bwal.haveWAL && !cfg.NewCluster: // 需要等待原 cluster 的 leader 主动发起变更拉群。。。
 		return bootstrapRaftFromCluster(cfg, cluster.cl, nil, bwal)
 	case !bwal.haveWAL && cfg.NewCluster:
 		return bootstrapRaftFromCluster(cfg, cluster.cl, cluster.cl.MemberIDs(), bwal)
@@ -550,7 +551,7 @@ func (b *bootstrappedRaft) newRaftNode(ss *snap.Snapshotter, wal *wal.WAL, cl *m
 }
 
 func bootstrapWALFromSnapshot(cfg config.ServerConfig, snapshot *raftpb.Snapshot) *bootstrappedWAL {
-	wal, st, ents, snap, meta := openWALFromSnapshot(cfg, snapshot)
+	wal, st, ents, snap, meta := openWALFromSnapshot(cfg, snapshot) // use the latest snapshot to cut wal...
 	bwal := &bootstrappedWAL{
 		lg:       cfg.Logger,
 		w:        wal,

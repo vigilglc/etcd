@@ -712,7 +712,7 @@ func (s *EtcdServer) linearizableReadLoop() {
 		select {
 		case <-leaderChangedNotifier:
 			continue
-		case <-s.readwaitc:
+		case <-s.readwaitc: // after linearizableReadNotify invoked, go through...
 		case <-s.stopping:
 			return
 		}
@@ -723,7 +723,7 @@ func (s *EtcdServer) linearizableReadLoop() {
 
 		nextnr := newNotifier()
 		s.readMu.Lock()
-		nr := s.readNotifier
+		nr := s.readNotifier // used to notify error in linearizableReadNotify
 		s.readNotifier = nextnr
 		s.readMu.Unlock()
 
@@ -751,7 +751,7 @@ func (s *EtcdServer) linearizableReadLoop() {
 			}
 		}
 		// unblock all l-reads requested at indices before confirmedIndex
-		nr.notify(nil)
+		nr.notify(nil) // unblock linearizableReadNotify select wait...
 		trace.Step("applied index is now lower than readState.Index")
 
 		trace.LogAllStepsIfLong(traceThreshold)
@@ -771,7 +771,7 @@ func (s *EtcdServer) requestCurrentIndex(leaderChangedNotifier <-chan struct{}, 
 	lg := s.Logger()
 	errorTimer := time.NewTimer(s.Cfg.ReqTimeout())
 	defer errorTimer.Stop()
-	retryTimer := time.NewTimer(readIndexRetryTime)
+	retryTimer := time.NewTimer(readIndexRetryTime) // 500 ms
 	defer retryTimer.Stop()
 
 	firstCommitInTermNotifier := s.firstCommitInTerm.Receive()
@@ -794,10 +794,10 @@ func (s *EtcdServer) requestCurrentIndex(leaderChangedNotifier <-chan struct{}, 
 					zap.Uint64("received-request-id", responseId),
 				)
 				slowReadIndex.Inc()
-				continue
+				continue // how could?
 			}
 			return rs.Index, nil
-		case <-leaderChangedNotifier:
+		case <-leaderChangedNotifier: // notify leader changed, to fast fail...
 			readIndexFailed.Inc()
 			// return a retryable error.
 			return 0, ErrLeaderChanged
@@ -870,7 +870,7 @@ func (s *EtcdServer) linearizableReadNotify(ctx context.Context) error {
 
 	// signal linearizable loop for current notify if it hasn't been already
 	select {
-	case s.readwaitc <- struct{}{}:
+	case s.readwaitc <- struct{}{}: // non-blocking...
 	default:
 	}
 

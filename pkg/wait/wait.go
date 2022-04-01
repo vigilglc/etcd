@@ -25,7 +25,7 @@ const (
 	// To avoid lock contention we use an array of list struct (rw mutex & map)
 	// for the id argument, we apply mod operation and uses its remainder to
 	// index into the array and find the corresponding element.
-	defaultListElementLength = 64
+	defaultListElementLength = 64 // 减小锁粒度吗？ contention means 巨大的分歧
 )
 
 // Wait is an interface that provides the ability to wait and trigger events that

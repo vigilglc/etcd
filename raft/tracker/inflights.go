@@ -19,7 +19,7 @@ package tracker
 // use Full() to check whether more messages can be sent, call Add() whenever
 // they are sending a new append, and release "quota" via FreeLE() whenever an
 // ack is received.
-type Inflights struct {
+type Inflights struct { // cyclic buffer
 	// the starting index in the buffer
 	start int
 	// number of inflights in the buffer
