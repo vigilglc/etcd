@@ -467,6 +467,7 @@ func (c *bootstrapedCluster) databaseFileMissing(s *bootstrappedStorage) bool {
 func bootstrapRaft(cfg config.ServerConfig, cluster *bootstrapedCluster, bwal *bootstrappedWAL) *bootstrappedRaft {
 	switch {
 	case !bwal.haveWAL && !cfg.NewCluster: // 需要等待原 cluster 的 leader 主动发起变更拉群。。。
+		// nil since all confChange logs can be replicated from leader...
 		return bootstrapRaftFromCluster(cfg, cluster.cl, nil, bwal)
 	case !bwal.haveWAL && cfg.NewCluster:
 		return bootstrapRaftFromCluster(cfg, cluster.cl, cluster.cl.MemberIDs(), bwal)
