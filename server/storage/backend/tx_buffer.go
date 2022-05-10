@@ -151,7 +151,7 @@ func (bb *bucketBuffer) Range(key, endKey []byte, limit int64) (keys [][]byte, v
 	if idx < 0 || idx >= bb.used {
 		return nil, nil
 	}
-	if len(endKey) == 0 {
+	if len(endKey) == 0 { // ?
 		if bytes.Equal(key, bb.buf[idx].key) {
 			keys = append(keys, bb.buf[idx].key)
 			vals = append(vals, bb.buf[idx].val)

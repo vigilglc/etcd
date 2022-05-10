@@ -329,7 +329,7 @@ func (t *batchTxBuffered) unsafeCommit(stop bool) {
 	t.batchTx.commit(stop)
 
 	if !stop {
-		t.backend.readTx.tx = t.backend.begin(false)
+		t.backend.readTx.tx = t.backend.begin(false) // read tx begun by batchTx
 	}
 }
 

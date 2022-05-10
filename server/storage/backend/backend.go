@@ -267,13 +267,13 @@ func (b *backend) ConcurrentReadTx() ReadTx {
 		// this is only supposed to run once so there won't be much overhead
 		curBuf := b.readTx.buf.unsafeCopy()
 		buf = &curBuf
-	case isStaleCache:
+	case isStaleCache: // https://github.com/etcd-io/etcd/pull/12933
 		// to maximize the concurrency, try unsafe copy of buffer
 		// release the lock while copying buffer -- cache may become stale again and
 		// get overwritten by someone else.
 		// therefore, we need to check the readTx buffer version again
 		b.txReadBufferCache.mu.Unlock()
-		curBuf := b.readTx.buf.unsafeCopy()
+		curBuf := b.readTx.buf.unsafeCopy() // holding readTx lock
 		b.txReadBufferCache.mu.Lock()
 		buf = &curBuf
 	default:
