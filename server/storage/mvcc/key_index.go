@@ -91,7 +91,7 @@ func (ki *keyIndex) put(lg *zap.Logger, main int64, sub int64) {
 	}
 	g := &ki.generations[len(ki.generations)-1]
 	if len(g.revs) == 0 { // create a new key
-		keysGauge.Inc()
+		keysGauge.Inc() // record generations count... 
 		g.created = rev
 	}
 	g.revs = append(g.revs, rev)
@@ -109,7 +109,7 @@ func (ki *keyIndex) restore(lg *zap.Logger, created, modified revision, ver int6
 
 	ki.modified = modified
 	g := generation{created: created, ver: ver, revs: []revision{modified}}
-	ki.generations = append(ki.generations, g)
+	ki.generations = append(ki.generations, g) // merely append?
 	keysGauge.Inc()
 }
 
@@ -333,7 +333,7 @@ func (ki *keyIndex) String() string {
 
 // generation contains multiple revisions of a key.
 type generation struct {
-	ver     int64
+	ver     int64    // increased every time modified...
 	created revision // when the generation is created (put in first revision).
 	revs    []revision
 }

@@ -482,7 +482,7 @@ type watcher struct {
 	// the watcher key
 	key []byte
 	// end indicates the end of the range to watch.
-	// If end is set, the watcher is on a range.
+	// If end is set, the watcher is on a range. otherwise, watch single-key
 	end []byte
 
 	// victim is set when ch is blocked and undergoing victim processing
@@ -530,7 +530,7 @@ func (w *watcher) send(wr WatchResponse) bool {
 	}
 
 	// if all events are filtered out, we should send nothing.
-	if !progressEvent && len(wr.Events) == 0 {
+	if !progressEvent && len(wr.Events) == 0 { // if initial empty, still send wr...
 		return true
 	}
 	select {

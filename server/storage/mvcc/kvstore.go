@@ -268,7 +268,7 @@ func (s *store) compact(trace *traceutil.Trace, rev int64) (<-chan struct{}, err
 }
 
 func (s *store) compactLockfree(rev int64) (<-chan struct{}, error) {
-	ch, err := s.updateCompactRev(rev)
+	ch, err := s.updateCompactRev(rev) // update without lock...
 	if err != nil {
 		return ch, err
 	}
@@ -298,7 +298,7 @@ func (s *store) Commit() {
 
 func (s *store) Restore(b backend.Backend) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	defer s.mu.Unlock() // released until store.restore returns.
 
 	close(s.stopc)
 	s.fifoSched.Stop()

@@ -26,7 +26,7 @@ import (
 type RangeOptions struct {
 	Limit int64
 	Rev   int64
-	Count bool
+	Count bool // merely count number of KV
 }
 
 type RangeResult struct {

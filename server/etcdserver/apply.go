@@ -261,7 +261,7 @@ func (a *applierV3backend) Put(ctx context.Context, txn mvcc.TxnWrite, p *pb.Put
 		)
 	}
 	val, leaseID := p.Value, lease.LeaseID(p.Lease)
-	if txn == nil {
+	if txn == nil { // apply pass txn = nil
 		if leaseID != lease.NoLease {
 			if l := a.s.lessor.Lookup(leaseID); l == nil {
 				return nil, nil, lease.ErrLeaseNotFound

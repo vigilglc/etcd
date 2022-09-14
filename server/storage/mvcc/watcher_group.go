@@ -54,7 +54,7 @@ func (eb *eventBatch) add(ev mvccpb.Event) {
 	// revision accounting
 	ebRev := eb.evs[len(eb.evs)-1].Kv.ModRevision
 	evRev := ev.Kv.ModRevision
-	if evRev > ebRev {
+	if evRev > ebRev { // incr...
 		eb.revs++
 		if eb.revs > watchBatchMaxRevs {
 			eb.moreRev = evRev
@@ -117,7 +117,7 @@ func (w watcherSet) delete(wa *watcher) {
 	delete(w, wa)
 }
 
-type watcherSetByKey map[string]watcherSet
+type watcherSetByKey map[string]watcherSet // single-key watcher set
 
 func (w watcherSetByKey) add(wa *watcher) {
 	set := w[string(wa.key)]
@@ -148,7 +148,7 @@ type watcherGroup struct {
 	// keyWatchers has the watchers that watch on a single key
 	keyWatchers watcherSetByKey
 	// ranges has the watchers that watch a range; it is sorted by interval
-	ranges adt.IntervalTree
+	ranges adt.IntervalTree // red-black tree... interval tree 线段树
 	// watchers is the set of all watchers
 	watchers watcherSet
 }

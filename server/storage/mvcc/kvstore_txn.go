@@ -36,7 +36,7 @@ type storeTxnRead struct {
 }
 
 func (s *store) Read(mode ReadTxMode, trace *traceutil.Trace) TxnRead {
-	s.mu.RLock()
+	s.mu.RLock() // store lock
 	s.revMu.RLock()
 	// For read-only workloads, we use shared buffer by copying transaction read buffer
 	// for higher concurrency with ongoing blocking writes.
@@ -51,7 +51,7 @@ func (s *store) Read(mode ReadTxMode, trace *traceutil.Trace) TxnRead {
 
 	tx.RLock() // RLock is no-op. concurrentReadTx does not need to be locked after it is created.
 	firstRev, rev := s.compactMainRev, s.currentRev
-	s.revMu.RUnlock()
+	s.revMu.RUnlock() // tx lock
 	return newMetricsTxnRead(&storeTxnRead{s, tx, firstRev, rev, trace})
 }
 
@@ -135,7 +135,7 @@ func (tr *storeTxnRead) rangeKeys(ctx context.Context, key, end []byte, curRev i
 	if rev < tr.s.compactMainRev {
 		return &RangeResult{KVs: nil, Count: -1, Rev: 0}, ErrCompacted
 	}
-	if ro.Count {
+	if ro.Count { // only count number of KV
 		total := tr.s.kvindex.CountRevisions(key, end, rev)
 		tr.trace.Step("count revisions from in-memory index tree")
 		return &RangeResult{KVs: nil, Count: total, Rev: curRev}, nil
